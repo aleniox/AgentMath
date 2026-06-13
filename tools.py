@@ -8,14 +8,22 @@ class GeometryEngine:
         self.points = {}      # {"A": (x, y), "B": (x, y), ...}
         self.segments = []    # [("A", "B", "color", "linestyle"), ...]
         self.circles = []     # [("O", radius, "color", "linestyle"), ...]
+        self.midpoints = []   # [("A", "M", "B"), ...]
 
     def reset_session(self):
         """Xóa toàn bộ dữ liệu để bắt đầu bài toán mới."""
         self.points.clear()
         self.segments.clear()
         self.circles.clear()
+        self.midpoints.clear()
         if hasattr(self, 'r'): delattr(self, 'r')
         return "Đã làm sạch hệ thống. Sẵn sàng cho bài toán mới."
+
+    def _check_points_exist(self, *names):
+        missing = [name for name in names if name not in self.points]
+        if missing:
+            return f"Lỗi: Không tìm thấy điểm {', '.join(missing)} trong hệ thống. Hãy dựng các điểm này trước."
+        return None
 
     # ==========================================
     # NHÓM 1: KHỞI TẠO NỀN MÓNG (THỰC THỂ GỐC)
@@ -55,27 +63,26 @@ class GeometryEngine:
         self.points[name] = (x, y)
         return f"Đã lấy điểm {name} trên đường tròn với góc {angle_deg}°."
 
-    # ĐỔI TÊN HÀM NÀY:
     def create_circle_with_diameter(self, center_name="O", radius=5,
-                                     point_diameter_1=None, point_diameter_2=None,
-                                     point_diameter_3=None, point_diameter_4=None):
-        """Tạo đường tròn tâm O bán kính R. Tùy chọn tạo 1 hoặc 2 đường kính vuông góc.
-        - p1-p2: đường kính thứ nhất (nằm ngang)
-        - p3-p4: đường kính thứ hai vuông góc (nằm dọc)
+                                     horizontal_p1=None, horizontal_p2=None,
+                                     vertical_p1=None, vertical_p2=None):
+        """Tạo đường tròn tâm center_name bán kính R. Tùy chọn tạo 1 hoặc 2 đường kính vuông góc.
+        - horizontal_p1, horizontal_p2: hai đầu mút của đường kính thứ nhất (nằm ngang)
+        - vertical_p1, vertical_p2: hai đầu mút của đường kính thứ hai (nằm dọc)
         """
         self.points[center_name] = (0.0, 0.0)
         self.r = float(radius)
         self.circles.append((center_name, self.r, 'b', '-'))
         
-        if point_diameter_1 and point_diameter_2:
-            self.points[point_diameter_1] = (-self.r, 0.0)
-            self.points[point_diameter_2] = (self.r, 0.0)
-            self.add_segment(point_diameter_1, point_diameter_2, 'k', '-')
+        if horizontal_p1 and horizontal_p2:
+            self.points[horizontal_p1] = (-self.r, 0.0)
+            self.points[horizontal_p2] = (self.r, 0.0)
+            self.add_segment(horizontal_p1, horizontal_p2, 'k', '-')
             
-        if point_diameter_3 and point_diameter_4:
-            self.points[point_diameter_3] = (0.0, self.r)
-            self.points[point_diameter_4] = (0.0, -self.r)
-            self.add_segment(point_diameter_3, point_diameter_4, 'k', '-')
+        if vertical_p1 and vertical_p2:
+            self.points[vertical_p1] = (0.0, self.r)
+            self.points[vertical_p2] = (0.0, -self.r)
+            self.add_segment(vertical_p1, vertical_p2, 'k', '-')
             
         return f"Đã tạo đường tròn tâm {center_name} bán kính R={radius}."
 
@@ -95,10 +102,13 @@ class GeometryEngine:
         x1, y1 = self.points[p1_name]
         x2, y2 = self.points[p2_name]
         self.points[result_name] = ((x1 + x2) / 2, (y1 + y2) / 2)
+        self.midpoints.append((p1_name, result_name, p2_name))
         return f"Đã dựng trung điểm {result_name} của {p1_name}{p2_name}."
 
     def get_line_line_intersection(self, p1_l1, p2_l1, p1_l2, p2_l2, result_name):
-        """Tìm giao điểm của 2 đường thẳng và tự động nối các nét vẽ hệ quả."""
+        """Tìm giao điểm của 2 đường thẳng và tự động nối các nét vẽ kéo dài đến giao điểm."""
+        self.add_segment(p1_l1, p2_l1, color='k', linestyle='-')
+        self.add_segment(p1_l2, p2_l2, color='k', linestyle='-')
         x1, y1 = self.points[p1_l1]
         x2, y2 = self.points[p2_l1]
         x3, y3 = self.points[p1_l2]
@@ -112,101 +122,111 @@ class GeometryEngine:
         py = ((x1*y2 - y1*x2)*(y3 - y4) - (y1 - y2)*(x3*y4 - y3*x4)) / den
         self.points[result_name] = (px, py)
         
-        # TỰ ĐỘNG NỐI TOÀN BỘ 2 ĐƯỜNG THẲNG (nét đứt) để user thấy rõ
-        self.add_segment(p1_l1, p2_l1, color='b', linestyle=':')
-        self.add_segment(p1_l2, p2_l2, color='b', linestyle=':')
+        # Tự động kéo dài đoạn thẳng gốc đến giao điểm (để đường vẽ không bị đứt quãng)
+        dist1_1 = np.hypot(x1 - px, y1 - py)
+        dist1_2 = np.hypot(x2 - px, y2 - py)
+        far1 = p1_l1 if dist1_1 > dist1_2 else p2_l1
+        
+        dist2_1 = np.hypot(x3 - px, y3 - py)
+        dist2_2 = np.hypot(x4 - px, y4 - py)
+        far2 = p1_l2 if dist2_1 > dist2_2 else p2_l2
+        
+        self.add_segment(far1, result_name, color='k', linestyle='-')
+        self.add_segment(far2, result_name, color='k', linestyle='-')
         return f"Đã tìm thấy giao điểm {result_name} tại ({px:.2f}, {py:.2f})."
 
-    def get_line_circle_intersection(self, p1_line, p2_line, center, result_1, result_2=None):
-        """Tìm giao điểm của đường thẳng (qua p1_line, p2_line) với đường tròn tâm center.
-        result_1: giao điểm gần p1_line nhất.
-        result_2: giao điểm thứ hai (nếu None thì bỏ qua).
-        Nếu một trong 2 điểm đã nằm trên đường tròn, trả về điểm còn lại là result_2.
+    def get_line_circle_intersection(self, p1_line, p2_line, center_name, result_name1, result_name2=None, exclude_point=None):
+        """Tìm các giao điểm của đường thẳng (đi qua p1_line, p2_line) với đường tròn tâm center_name.
+        - result_name1: Tên điểm gán cho giao điểm thứ nhất.
+        - result_name2: Tên điểm gán cho giao điểm thứ hai (nếu có).
+        - exclude_point: Nếu được cung cấp, giao điểm nào trùng hoặc gần điểm này nhất sẽ bị loại bỏ, và giao điểm còn lại sẽ được gán cho result_name1.
         """
-        if any(p not in self.points for p in [p1_line, p2_line, center]):
+        self.add_segment(p1_line, p2_line, color='k', linestyle='-')
+        if any(p not in self.points for p in [p1_line, p2_line, center_name]):
             return "Lỗi: Thiếu dữ liệu điểm."
-        r = getattr(self, 'r', None)
-        if r is None:
-            return "Lỗi: Chưa khởi tạo bán kính đường tròn."
         
+        # Tìm bán kính đường tròn
+        r = None
+        for c_name, radius, _, _ in self.circles:
+            if c_name == center_name:
+                r = radius
+                break
+        if r is None:
+            r = getattr(self, 'r', None)
+        if r is None:
+            return f"Lỗi: Chưa xác định được bán kính của đường tròn tâm {center_name}."
+            
         x1, y1 = self.points[p1_line]
         x2, y2 = self.points[p2_line]
-        cx, cy = self.points[center]
+        cx, cy = self.points[center_name]
         
         dx, dy = x2 - x1, y2 - y1
-        # Giải PT bậc 2: (x1 + t*dx - cx)^2 + (y1 + t*dy - cy)^2 = r^2
         a = dx*dx + dy*dy
+        if a < 1e-6:
+            return "Lỗi: Hai điểm của đường thẳng trùng nhau."
+            
         b = 2 * (dx*(x1 - cx) + dy*(y1 - cy))
         c = (x1 - cx)**2 + (y1 - cy)**2 - r*r
         
         disc = b*b - 4*a*c
-        if disc < -1e-9:
-            return f"Lỗi: Đường thẳng {p1_line}{p2_line} không cắt đường tròn."
-        if abs(disc) < 1e-9:
-            disc = 0  # tiếp tuyến
-        
-        sqrt_disc = np.sqrt(disc)
-        t1 = (-b + sqrt_disc) / (2*a)
-        t2 = (-b - sqrt_disc) / (2*a)
-        
-        if t1 > t2:
-            t1, t2 = t2, t1
-        
-        def point_at(t):
-            return (x1 + t*dx, y1 + t*dy)
-        
-        # Kiểm tra xem p1_line hoặc p2_line có nằm trên đường tròn không
-        # Nếu có, ưu tiên gán điểm kia cho result_2
-        on_circle = lambda x, y: abs((x-cx)**2 + (y-cy)**2 - r*r) < 1e-9
-        
-        pts = [point_at(t1), point_at(t2)]
-        
-        # Dedup (tiếp tuyến)
-        if abs(t1 - t2) < 1e-9:
-            pts = pts[:1]
-        
-        # Gán kết quả
-        n_assigned = 0
-        for t, pt in [(t1, pts[0]), (t2, pts[-1])]:
-            px, py = pt
-            matched_p1 = abs(px - x1) < 1e-9 and abs(py - y1) < 1e-9
-            matched_p2 = abs(px - x2) < 1e-9 and abs(py - y2) < 1e-9
+        if disc < -1e-6:
+            return f"Lỗi: Đường thẳng {p1_line}{p2_line} không cắt đường tròn tâm {center_name}."
+        if disc < 0:
+            disc = 0.0
             
-            if matched_p1 and on_circle(x1, y1):
-                # p1_line đã nằm trên đường tròn, bỏ qua, lấy điểm kia
-                continue
-            if matched_p2 and on_circle(x2, y2):
-                continue
-            
-            name = result_1 if n_assigned == 0 else (result_2 if result_2 else None)
-            if name is None:
-                break
-            self.points[name] = (px, py)
-            n_assigned += 1
+        t1 = (-b + np.sqrt(disc)) / (2*a)
+        t2 = (-b - np.sqrt(disc)) / (2*a)
         
-        # Tự động nối nét
-        if result_1 in self.points:
-            self.add_segment(p1_line, result_1, color='b', linestyle=':')
-        if result_2 and result_2 in self.points:
-            self.add_segment(p1_line, result_2, color='b', linestyle=':')
+        pt1 = (x1 + t1*dx, y1 + t1*dy)
+        pt2 = (x1 + t2*dx, y1 + t2*dy)
         
-        if n_assigned == 0:
-            return f"Lỗi: Cả 2 điểm {p1_line},{p2_line} đều đã nằm trên đường tròn."
-        
-        msg = f"Đã tìm giao điểm của {p1_line}{p2_line} với đường tròn tâm {center}: {result_1}"
-        if result_2 and result_2 in self.points:
-            msg += f", {result_2}"
+        # Nếu có exclude_point, lọc bỏ điểm trùng/gần nó nhất
+        if exclude_point and exclude_point in self.points:
+            ex, ey = self.points[exclude_point]
+            d1 = np.hypot(pt1[0] - ex, pt1[1] - ey)
+            d2 = np.hypot(pt2[0] - ex, pt2[1] - ey)
+            if d1 > d2:
+                self.points[result_name1] = pt1
+                if result_name2:
+                    self.points[result_name2] = pt2
+            else:
+                self.points[result_name1] = pt2
+                if result_name2:
+                    self.points[result_name2] = pt1
+        else:
+            self.points[result_name1] = pt1
+            if result_name2:
+                self.points[result_name2] = pt2
+                
+        # Tự động vẽ các đoạn thẳng nối dài đến giao điểm để hiển thị hình vẽ hoàn chỉnh
+        # Tìm điểm xa nhất trong p1_line, p2_line so với giao điểm mới vẽ để kéo dài
+        for res_name in [result_name1, result_name2]:
+            if res_name and res_name in self.points:
+                px, py = self.points[res_name]
+                dist1 = np.hypot(x1 - px, y1 - py)
+                dist2 = np.hypot(x2 - px, y2 - py)
+                far = p1_line if dist1 > dist2 else p2_line
+                self.add_segment(far, res_name, color='k', linestyle='-')
+                
+        msg = f"Đã dựng giao điểm của đường thẳng {p1_line}{p2_line} với đường tròn tâm {center_name}: {result_name1}"
+        if result_name2:
+            msg += f" và {result_name2}"
         return msg
 
     def get_perpendicular_projection(self, point_name, p1_line, p2_line, result_name):
         """Hạ đường vuông góc từ một điểm xuống một đường thẳng (Tìm chân đường cao)."""
+        err = self._check_points_exist(point_name, p1_line, p2_line)
+        if err: return err
+        
+        self.add_segment(p1_line, p2_line, color='k', linestyle='-')
         x0, y0 = self.points[point_name]
         x1, y1 = self.points[p1_line]
         x2, y2 = self.points[p2_line]
         
         dx, dy = x2 - x1, y2 - y1
         mag2 = dx*dx + dy*dy
-        if mag2 < 1e-6: return "Lỗi: Đường thẳng không hợp lệ."
+        if mag2 < 1e-6:
+            return f"Lỗi: Đường thẳng không hợp lệ. Hai điểm {p1_line} và {p2_line} có tọa độ trùng nhau tại ({x1:g}, {y1:g}). Không thể xác định đường thẳng."
         
         u = ((x0 - x1) * dx + (y0 - y1) * dy) / mag2
         hx = x1 + u * dx
@@ -229,6 +249,237 @@ class GeometryEngine:
         self.points[result_name] = (nx, ny)
         self.add_segment(point_name, result_name, color='m', linestyle=':')
         return f"Đã dựng đường thẳng qua {point_name} song song với {p1_ref}{p2_ref}."
+
+    def add_circle(self, center_name, radius, color='b', linestyle='-'):
+        """Tạo/Thêm đường tròn tâm center_name.
+        - radius: có thể là một số thực (bán kính cụ thể) hoặc tên của một điểm đã có (khi đó bán kính là khoảng cách từ center_name đến điểm đó).
+        """
+        if center_name not in self.points:
+            return f"Lỗi: Không tìm thấy tâm {center_name}"
+        
+        if isinstance(radius, str):
+            if radius not in self.points:
+                return f"Lỗi: Không tìm thấy điểm {radius} để tính bán kính."
+            cx, cy = self.points[center_name]
+            rx, ry = self.points[radius]
+            r_val = float(np.hypot(rx - cx, ry - cy))
+        else:
+            r_val = float(radius)
+            
+        self.circles.append((center_name, r_val, color, linestyle))
+        if center_name == "O" or not hasattr(self, 'r'):
+            self.r = r_val
+        return f"Đã tạo đường tròn tâm {center_name} bán kính R={r_val:.4f}."
+
+    def get_circle_circle_intersection(self, center1_name, center2_name, result_name1, result_name2=None, exclude_point=None):
+        """Tìm giao điểm của hai đường tròn tâm center1_name và center2_name.
+        - exclude_point: Nếu được cung cấp, giao điểm nào trùng hoặc gần điểm này nhất sẽ bị loại bỏ, và giao điểm còn lại sẽ được gán cho result_name1.
+        """
+        if center1_name not in self.points or center2_name not in self.points:
+            return "Lỗi: Thiếu dữ liệu điểm tâm."
+            
+        r1, r2 = None, None
+        for c_name, r, _, _ in self.circles:
+            if c_name == center1_name: r1 = r
+            if c_name == center2_name: r2 = r
+        if r1 is None or r2 is None:
+            return "Lỗi: Không tìm thấy bán kính của các đường tròn."
+            
+        x1, y1 = self.points[center1_name]
+        x2, y2 = self.points[center2_name]
+        d = np.hypot(x2 - x1, y2 - y1)
+        
+        if d > r1 + r2 + 1e-6 or d < abs(r1 - r2) - 1e-6 or d < 1e-6:
+            return "Lỗi: Hai đường tròn không giao nhau."
+            
+        a = (r1**2 - r2**2 + d**2) / (2*d)
+        h = np.sqrt(max(0.0, r1**2 - a**2))
+        
+        x_mid = x1 + (a/d)*(x2 - x1)
+        y_mid = y1 + (a/d)*(y2 - y1)
+        
+        rx = -(y2 - y1)/d
+        ry = (x2 - x1)/d
+        
+        pt1 = (x_mid + h*rx, y_mid + h*ry)
+        pt2 = (x_mid - h*rx, y_mid - h*ry)
+        
+        if exclude_point and exclude_point in self.points:
+            ex, ey = self.points[exclude_point]
+            d1 = np.hypot(pt1[0] - ex, pt1[1] - ey)
+            d2 = np.hypot(pt2[0] - ex, pt2[1] - ey)
+            if d1 > d2:
+                self.points[result_name1] = pt1
+                if result_name2: self.points[result_name2] = pt2
+            else:
+                self.points[result_name1] = pt2
+                if result_name2: self.points[result_name2] = pt1
+        else:
+            self.points[result_name1] = pt1
+            if result_name2:
+                self.points[result_name2] = pt2
+                
+        return f"Đã dựng giao điểm của 2 đường tròn: {result_name1}" + (f" và {result_name2}" if result_name2 else "")
+
+    def get_tangents_from_external_point(self, external_point_name, center_name, tangent_point_name1, tangent_point_name2=None):
+        """Tìm các tiếp điểm và vẽ các đường tiếp tuyến từ external_point_name đến đường tròn tâm center_name."""
+        if external_point_name not in self.points or center_name not in self.points:
+            return "Lỗi: Thiếu dữ liệu điểm."
+            
+        r_val = None
+        for c_name, r, _, _ in self.circles:
+            if c_name == center_name:
+                r_val = r
+                break
+        if r_val is None:
+            r_val = getattr(self, 'r', None)
+        if r_val is None:
+            return "Lỗi: Không tìm thấy bán kính đường tròn."
+            
+        x1, y1 = self.points[external_point_name]
+        xc, yc = self.points[center_name]
+        d = np.hypot(xc - x1, yc - y1)
+        
+        if d < r_val - 1e-6:
+            return (f"Lỗi: Điểm {external_point_name} nằm TRONG đường tròn (khoảng cách đến tâm = {d:.4f} < bán kính R = {r_val:.4f}). "
+                    f"Không thể vẽ tiếp tuyến. Hãy dùng `add_point` để di chuyển {external_point_name} ra xa tâm hơn, "
+                    f"hoặc kiểm tra lại tọa độ. Gợi ý: dùng `get_distance('{external_point_name}', '{center_name}')` để kiểm tra.")
+            
+        L = np.sqrt(max(0.0, d**2 - r_val**2))
+        
+        a = (r_val**2 - L**2 + d**2) / (2*d)
+        h = np.sqrt(max(0.0, r_val**2 - a**2))
+        
+        x_mid = xc + (a/d)*(x1 - xc)
+        y_mid = yc + (a/d)*(y1 - yc)
+        
+        rx = -(y1 - yc)/d
+        ry = (x1 - xc)/d
+        
+        pt1 = (x_mid + h*rx, y_mid + h*ry)
+        pt2 = (x_mid - h*rx, y_mid - h*ry)
+        
+        self.points[tangent_point_name1] = pt1
+        self.add_segment(external_point_name, tangent_point_name1, color='k', linestyle='-')
+        
+        if tangent_point_name2:
+            self.points[tangent_point_name2] = pt2
+            self.add_segment(external_point_name, tangent_point_name2, color='k', linestyle='-')
+            
+        return f"Đã dựng các tiếp tuyến từ {external_point_name} đến {center_name} với các tiếp điểm {tangent_point_name1}" + (f", {tangent_point_name2}" if tangent_point_name2 else "")
+
+    def add_tangent_line_at_point(self, center_name, point_on_circle, result_name, length=5.0):
+        """Dựng tiếp tuyến tại điểm point_on_circle thuộc đường tròn tâm center_name.
+        Tạo thêm một điểm mới result_name nằm trên tiếp tuyến cách point_on_circle một đoạn = length để xác định hướng vẽ.
+        """
+        if center_name not in self.points or point_on_circle not in self.points:
+            return "Lỗi: Thiếu dữ liệu điểm."
+            
+        xc, yc = self.points[center_name]
+        xp, yp = self.points[point_on_circle]
+        
+        dx, dy = xp - xc, yp - yc
+        r = np.hypot(dx, dy)
+        if r < 1e-6:
+            return "Lỗi: Điểm trùng với tâm đường tròn."
+            
+        tx = -dy / r
+        ty = dx / r
+        
+        self.points[result_name] = (xp + tx * length, yp + ty * length)
+        self.add_segment(point_on_circle, result_name, color='k', linestyle='-')
+        return f"Đã dựng tiếp tuyến tại {point_on_circle} và tạo điểm {result_name} cách nó {length:g}."
+
+    def get_angle_bisector_intersection(self, p_angle, p_left, p_right, p1_line, p2_line, result_name):
+        """Dựng đường phân giác trong của góc p_left - p_angle - p_right, cắt đường thẳng p1_line-p2_line tại result_name."""
+        self.add_segment(p_angle, p_left, color='k', linestyle='-')
+        self.add_segment(p_angle, p_right, color='k', linestyle='-')
+        self.add_segment(p1_line, p2_line, color='k', linestyle='-')
+        if any(p not in self.points for p in [p_angle, p_left, p_right, p1_line, p2_line]):
+            return "Lỗi: Thiếu dữ liệu điểm."
+            
+        xa, ya = self.points[p_angle]
+        xb, yb = self.points[p_left]
+        xc, yc = self.points[p_right]
+        
+        dab = np.hypot(xb - xa, yb - ya)
+        dac = np.hypot(xc - xa, yc - ya)
+        
+        if dab < 1e-6 or dac < 1e-6:
+            return "Lỗi: Điểm trùng nhau không xác định được góc."
+            
+        ux, uy = (xb - xa)/dab, (yb - ya)/dab
+        vx, vy = (xc - xa)/dac, (yc - ya)/dac
+        
+        wx, wy = ux + vx, uy + vy
+        mag_w = np.hypot(wx, wy)
+        if mag_w < 1e-6:
+            wx, wy = -uy, ux
+        else:
+            wx, wy = wx/mag_w, wy/mag_w
+            
+        x_bis = xa + wx
+        y_bis = ya + wy
+        
+        self.points["_bis_temp"] = (x_bis, y_bis)
+        res = self.get_line_line_intersection(p_angle, "_bis_temp", p1_line, p2_line, result_name)
+        if "_bis_temp" in self.points:
+            del self.points["_bis_temp"]
+        
+        self.add_segment(p_angle, result_name, color='m', linestyle='-.')
+        return f"Đã dựng đường phân giác góc {p_left}{p_angle}{p_right} cắt {p1_line}{p2_line} tại {result_name}."
+
+    def add_circumcircle(self, p1_name, p2_name, p3_name, center_name, color='g', linestyle='--'):
+        """Dựng đường tròn ngoại tiếp đi qua 3 điểm p1_name, p2_name, p3_name.
+        Tạo điểm tâm mới đặt tên là center_name và tự động vẽ đường tròn ngoại tiếp này dưới dạng nét đứt.
+        Nếu tâm tính được trùng với tọa độ của một điểm đã có, sẽ dùng lại điểm đó.
+        """
+        if any(p not in self.points for p in [p1_name, p2_name, p3_name]):
+            return "Lỗi: Thiếu dữ liệu điểm để dựng đường tròn ngoại tiếp."
+            
+        x1, y1 = self.points[p1_name]
+        x2, y2 = self.points[p2_name]
+        x3, y3 = self.points[p3_name]
+        
+        A1 = 2 * (x2 - x1)
+        B1 = 2 * (y2 - y1)
+        C1 = x2**2 + y2**2 - (x1**2 + y1**2)
+        
+        A2 = 2 * (x3 - x1)
+        B2 = 2 * (y3 - y1)
+        C2 = x3**2 + y3**2 - (x1**2 + y1**2)
+        
+        den = A1 * B2 - B1 * A2
+        if abs(den) < 1e-6:
+            return "Lỗi: 3 điểm thẳng hàng, không thể dựng đường tròn ngoại tiếp."
+            
+        cx = (C1 * B2 - B1 * C2) / den
+        cy = (A1 * C2 - C1 * A2) / den
+        
+        # Kiểm tra xem tọa độ đã có điểm nào chưa
+        existing = None
+        for name, (px, py) in self.points.items():
+            if abs(px - cx) < 1e-9 and abs(py - cy) < 1e-9:
+                existing = name
+                break
+        
+        if existing:
+            actual_name = existing
+            if existing != center_name:
+                actual_name = center_name
+                self.points[actual_name] = (float(cx), float(cy))
+        else:
+            self.points[center_name] = (float(cx), float(cy))
+            actual_name = center_name
+        
+        r_val = float(np.hypot(x1 - cx, y1 - cy))
+        self.circles.append((actual_name, r_val, color, linestyle))
+        
+        msg = f"Đã dựng đường tròn ngoại tiếp đi qua {p1_name}, {p2_name}, {p3_name} với tâm {actual_name}"
+        if existing:
+            msg += f" (tọa độ trùng với {existing}, dùng lại)"
+        msg += f" và bán kính R={r_val:.4f}."
+        return msg
 
     # ==========================================
     # NHÓM 3: CÔNG CỤ PHỤ TRỢ & KIỂM TRA
@@ -257,13 +508,17 @@ class GeometryEngine:
 
     def reflect_point_over_line(self, point_name, p1_line, p2_line, result_name):
         """Tìm điểm đối xứng của một điểm qua một đường thẳng."""
+        err = self._check_points_exist(point_name, p1_line, p2_line)
+        if err: return err
+        
+        self.add_segment(p1_line, p2_line, color='k', linestyle='-')
         x0, y0 = self.points[point_name]
         x1, y1 = self.points[p1_line]
         x2, y2 = self.points[p2_line]
         dx, dy = x2 - x1, y2 - y1
         mag2 = dx*dx + dy*dy
         if mag2 < 1e-6:
-            return "Lỗi: Đường thẳng không hợp lệ."
+            return f"Lỗi: Đường thẳng không hợp lệ. Hai điểm {p1_line} và {p2_line} có tọa độ trùng nhau tại ({x1:g}, {y1:g}). Không thể xác định đường thẳng."
         u = ((x0 - x1) * dx + (y0 - y1) * dy) / mag2
         hx = x1 + u * dx
         hy = y1 + u * dy
@@ -279,20 +534,49 @@ class GeometryEngine:
         if not self.points: 
             return "Không có dữ liệu vẽ hình."
         
+        from matplotlib.patches import Polygon, Circle
+        
         # Thiết lập cấu hình đồ họa độ phân giải cao
         fig, ax = plt.subplots(figsize=(8, 8), dpi=300)
         
-        # 1. Lấy bán kính hiện tại để tính toán tỉ lệ hiển thị nhãn (Label)
         current_r = getattr(self, 'r', 5.0)
-        offset = current_r * 0.04  # Khoảng cách chữ động tránh đè lên điểm chấm
+        offset = current_r * 0.05  # Khoảng cách chữ động tránh đè lên điểm chấm
         
-        # 2. Vẽ tất cả các đường tròn có trong bộ nhớ
-        for center_name, radius, color, style in self.circles:
-            cx, cy = self.points[center_name]
-            circle_art = plt.Circle((cx, cy), radius, color=color, fill=False, linestyle=style, linewidth=1.8)
-            ax.add_patch(circle_art)
+        # 1. Hơi lọc điểm: Phân biệt điểm chính (visible) và điểm phụ trợ
+        import re
+        def is_visible_point(name):
+            if name.startswith('_'):
+                return False
+            # Nếu tên chứa ký tự viết thường (ví dụ: 'alt', 'tangent', 'temp'), đó là điểm phụ trợ
+            if any(c.islower() for c in name):
+                return False
+            return True
             
-        # 3. Vẽ tất cả các đoạn thẳng đã đăng ký (loại bỏ trùng lặp)
+        visible_points = {name: coord for name, coord in self.points.items() if is_visible_point(name)}
+        
+        # 2. Định nghĩa Palette màu cao cấp
+        COLOR_MAP = {
+            'b': '#4a69bd',      # Slate Blue
+            'g': '#10ac84',      # Emerald Green
+            'k': '#2d3436',      # Charcoal/Dark Gray
+            'r': '#ee5253',      # Coral Red
+            'm': '#8854d0',      # Soft Purple
+            'c': '#0a3d62',      # Navy Blue / Dark Teal
+            'y': '#f39c12',      # Amber Orange
+        }
+        
+        def get_color(c):
+            return COLOR_MAP.get(c, c)
+            
+        # 3. Vẽ các đường tròn
+        for center_name, radius, color, style in self.circles:
+            if center_name in self.points:
+                cx, cy = self.points[center_name]
+                circle_art = Circle((cx, cy), radius, color=get_color(color), fill=False, linestyle=style, linewidth=1.2)
+                ax.add_patch(circle_art)
+                
+        # 4. Gom nhóm và vẽ các đoạn thẳng (chỉ vẽ nối giữa các điểm)
+        drawn_connections = set()
         seen_pairs = set()
         unique_segments = []
         for seg in self.segments:
@@ -301,51 +585,169 @@ class GeometryEngine:
             if key not in seen_pairs:
                 seen_pairs.add(key)
                 unique_segments.append(seg)
+                
         for p1_name, p2_name, color, style in unique_segments:
             if p1_name in self.points and p2_name in self.points:
                 x1, y1 = self.points[p1_name]
                 x2, y2 = self.points[p2_name]
-                ax.plot([x1, x2], [y1, y2], color=color, linestyle=style, linewidth=1.5)
-            
-        # 4. Vẽ các điểm (Nodes) và Gắn nhãn thông minh (Labels)
-        # Gom nhóm các điểm chính để ưu tiên hiển thị màu nổi bật
-        main_vertices = ['A', 'B', 'C', 'D', 'E', 'F', 'H', 'M', 'N', 'O']
-        
-        for name, (x, y) in self.points.items():
-            # Điểm gốc/Đỉnh chính màu đỏ, các giao điểm hệ quả màu xanh nước biển
-            point_color = 'ro' if name in main_vertices else 'bo'
-            ax.plot(x, y, point_color, markersize=6, zorder=5)
-            
-            # Tự động căn vị trí nhãn dựa trên vị trí điểm để tránh đè nét vẽ (Kỹ thuật tránh đè chữ)
-            text_x, text_y = x + offset, y + offset
-            if x < 0: text_x = x - offset * 2.5  # Nếu nằm bên trái trục Oy, đẩy chữ sang trái
-            if y < 0: text_y = y - offset * 2.0  # Nếu nằm dưới trục Ox, đẩy chữ xuống dưới
+                ax.plot([x1, x2], [y1, y2], color=get_color(color), linestyle=style, linewidth=1.2)
+                if is_visible_point(p1_name) and is_visible_point(p2_name):
+                    drawn_connections.add(tuple(sorted((p1_name, p2_name))))
                 
-            ax.text(text_x, text_y, name, fontsize=13, fontweight='bold', 
-                    color='darkred' if name in main_vertices else 'darkblue',
-                    zorder=6)
+        # 5. Tự động tìm các góc vuông và vẽ biểu tượng góc vuông (Right-angle indicators)
+        for B_name, (bx, by) in visible_points.items():
+            neighbors = []
+            for p1, p2 in drawn_connections:
+                if p1 == B_name:
+                    neighbors.append(p2)
+                elif p2 == B_name:
+                    neighbors.append(p1)
             
-        # 5. Cấu hình giới hạn khung trục (Viewport) tự động co giãn theo thực thể xa nhất
-        xs = [p[0] for p in self.points.values()]
-        ys = [p[1] for p in self.points.values()]
-        all_coords = xs + ys + [current_r, -current_r]
-        
-        max_val = max(abs(coord) for coord in all_coords)
-        limit_val = max_val * 1.25  # Chừa 25% rìa ngoài để không bị mất chữ Label
-        
+            for i in range(len(neighbors)):
+                for j in range(i + 1, len(neighbors)):
+                    A_name, C_name = neighbors[i], neighbors[j]
+                    ax_coord, ay_coord = visible_points[A_name]
+                    cx_coord, cy_coord = visible_points[C_name]
+                    
+                    # Vector BA và BC
+                    ux, uy = ax_coord - bx, ay_coord - by
+                    vx, vy = cx_coord - bx, cy_coord - by
+                    
+                    mag_u = np.hypot(ux, uy)
+                    mag_v = np.hypot(vx, vy)
+                    if mag_u < 1e-5 or mag_v < 1e-5:
+                        continue
+                        
+                    cos_theta = (ux*vx + uy*vy) / (mag_u * mag_v)
+                    if abs(cos_theta) < 1e-3: # Gần vuông góc
+                        s = current_r * 0.035
+                        ux_unit, uy_unit = ux / mag_u, uy / mag_u
+                        vx_unit, vy_unit = vx / mag_v, vy / mag_v
+                        
+                        p0 = (bx, by)
+                        p1 = (bx + s * ux_unit, by + s * uy_unit)
+                        p2 = (bx + s * (ux_unit + vx_unit), by + s * (uy_unit + vy_unit))
+                        p3 = (bx + s * vx_unit, by + s * vy_unit)
+                        
+                        rect = Polygon([p0, p1, p2, p3], closed=True, 
+                                       facecolor='#dcdde1', edgecolor='#7f8c8d', 
+                                       alpha=0.6, linewidth=0.8, zorder=2)
+                        ax.add_patch(rect)
+                        
+        # 6. Vẽ ký hiệu bằng nhau trên các trung đoạn (Midpoint ticks)
+        if hasattr(self, 'midpoints'):
+            for A_name, M_name, B_name in self.midpoints:
+                if A_name in visible_points and M_name in visible_points and B_name in visible_points:
+                    coords = [visible_points[A_name], visible_points[M_name], visible_points[B_name]]
+                    for X, Y in [(coords[0], coords[1]), (coords[1], coords[2])]:
+                        mid_pt = ((X[0] + Y[0]) / 2, (X[1] + Y[1]) / 2)
+                        dx, dy = Y[0] - X[0], Y[1] - X[1]
+                        len_d = np.hypot(dx, dy)
+                        if len_d > 1e-5:
+                            px, py = -dy / len_d, dx / len_d
+                            h = current_r * 0.025
+                            ax.plot([mid_pt[0] - px*h/2, mid_pt[0] + px*h/2],
+                                    [mid_pt[1] - py*h/2, mid_pt[1] + py*h/2],
+                                    color='#57606f', linewidth=1.0, zorder=4)
+
+        # 7. Vẽ các điểm (Nodes)
+        for name, (x, y) in visible_points.items():
+            ax.plot(x, y, marker='o', markerfacecolor='#ff4757', markeredgecolor='#c0392b', 
+                    markeredgewidth=0.8, markersize=4.5, zorder=5)
+
+        # 8. Đặt vị trí nhãn (Labels) thông minh tránh đè chữ
+        for name, (x, y) in visible_points.items():
+            connected_dirs = []
+            
+            # 8a. Đặt vị trí nhãn cho tâm O chéo dưới bên phải để tránh đè các đường kính vuông góc
+            if name == 'O':
+                dir_x, dir_y = 0.7, -0.7
+            else:
+                # 8b. Kiểm tra nếu điểm nằm trên đường tròn nào đó, ưu tiên đẩy nhãn ra phía ngoài đường tròn
+                on_circle_boundary = False
+                radial_dx, radial_dy = 0.0, 0.0
+                for center_name, radius, _, _ in self.circles:
+                    if center_name in self.points:
+                        cx, cy = self.points[center_name]
+                        dist_to_c = np.hypot(x - cx, y - cy)
+                        if abs(dist_to_c - radius) < 1e-2:
+                            on_circle_boundary = True
+                            radial_dx += (x - cx) / dist_to_c
+                            radial_dy += (y - cy) / dist_to_c
+                
+                if on_circle_boundary:
+                    mag_r = np.hypot(radial_dx, radial_dy)
+                    if mag_r > 1e-5:
+                        dir_x, dir_y = radial_dx / mag_r, radial_dy / mag_r
+                    else:
+                        dir_x, dir_y = 1.0, 1.0
+                else:
+                    for p1, p2 in drawn_connections:
+                        other = None
+                        if p1 == name:
+                            other = p2
+                        elif p2 == name:
+                            other = p1
+                        if other and other in visible_points:
+                            ox, oy = visible_points[other]
+                            ux, uy = ox - x, oy - y
+                            len_u = np.hypot(ux, uy)
+                            if len_u > 1e-5:
+                                connected_dirs.append((ux / len_u, uy / len_u))
+                    
+                    if connected_dirs:
+                        sum_dx = sum(d[0] for d in connected_dirs)
+                        sum_dy = sum(d[1] for d in connected_dirs)
+                        mag_s = np.hypot(sum_dx, sum_dy)
+                        if mag_s > 1e-5:
+                            dir_x, dir_y = -sum_dx / mag_s, -sum_dy / mag_s
+                        else:
+                            dir_x, dir_y = 0.7, -0.7
+                    else:
+                        dir_x, dir_y = 0.7, 0.7
+            
+            text_x = x + dir_x * offset
+            text_y = y + dir_y * offset
+            
+            ha = 'center'
+            if dir_x > 0.35:
+                ha = 'left'
+            elif dir_x < -0.35:
+                ha = 'right'
+                
+            va = 'center'
+            if dir_y > 0.35:
+                va = 'bottom'
+            elif dir_y < -0.35:
+                va = 'top'
+                
+            ax.text(text_x, text_y, name, fontsize=12, fontfamily='serif', fontstyle='italic', 
+                    color='#2c3e50', fontweight='semibold',
+                    horizontalalignment=ha, verticalalignment=va, zorder=6)
+
+        # 9. Tự động điều chỉnh Viewport
+        xs = [p[0] for p in visible_points.values()]
+        ys = [p[1] for p in visible_points.values()]
+        for center_name, radius, _, _ in self.circles:
+            if center_name in self.points:
+                cx, cy = self.points[center_name]
+                xs.extend([cx - radius, cx + radius])
+                ys.extend([cy - radius, cy + radius])
+                
+        all_coords = xs + ys
+        if all_coords:
+            max_val = max(abs(coord) for coord in all_coords)
+            limit_val = max_val * 1.15
+        else:
+            limit_val = current_r * 1.5
+            
         ax.set_xlim(-limit_val, limit_val)
         ax.set_ylim(-limit_val, limit_val)
         
-        # Giữ tỉ lệ 1:1 tuyệt đối để đường tròn luôn tròn, không bao giờ bị méo elip
         ax.set_aspect('equal', adjustable='box')
+        ax.axis('off')
         
-        # Ẩn các vạch số thô kệch của hệ trục tọa độ giải tích để giống hình vẽ Sách giáo khoa
-        ax.axis('off') 
-        
-        # Tự động tối ưu bố cục không gian vẽ trước khi lưu file
         plt.tight_layout()
-        
-        # Lưu hình ảnh chất lượng cao
         plt.savefig(filename, dpi=300, bbox_inches='tight', pad_inches=0.1)
         plt.close()
         
@@ -353,6 +755,7 @@ class GeometryEngine:
     
     def get_perpendicular_line_intersection(self, point_pass, p1_perp, p2_perp, p1_line2, p2_line2, result_name):
         """Kẻ đường thẳng qua point_pass vuông góc với p1_perp-p2_perp và cắt p1_line2-p2_line2 tại result_name."""
+        self.add_segment(p1_perp, p2_perp, color='k', linestyle='-')
         if any(p not in self.points for p in [point_pass, p1_perp, p2_perp, p1_line2, p2_line2]):
             return "Lỗi: Thiếu dữ liệu điểm để tính toán."
             
