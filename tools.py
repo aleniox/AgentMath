@@ -117,6 +117,87 @@ class GeometryEngine:
         self.add_segment(p1_l2, p2_l2, color='b', linestyle=':')
         return f"Đã tìm thấy giao điểm {result_name} tại ({px:.2f}, {py:.2f})."
 
+    def get_line_circle_intersection(self, p1_line, p2_line, center, result_1, result_2=None):
+        """Tìm giao điểm của đường thẳng (qua p1_line, p2_line) với đường tròn tâm center.
+        result_1: giao điểm gần p1_line nhất.
+        result_2: giao điểm thứ hai (nếu None thì bỏ qua).
+        Nếu một trong 2 điểm đã nằm trên đường tròn, trả về điểm còn lại là result_2.
+        """
+        if any(p not in self.points for p in [p1_line, p2_line, center]):
+            return "Lỗi: Thiếu dữ liệu điểm."
+        r = getattr(self, 'r', None)
+        if r is None:
+            return "Lỗi: Chưa khởi tạo bán kính đường tròn."
+        
+        x1, y1 = self.points[p1_line]
+        x2, y2 = self.points[p2_line]
+        cx, cy = self.points[center]
+        
+        dx, dy = x2 - x1, y2 - y1
+        # Giải PT bậc 2: (x1 + t*dx - cx)^2 + (y1 + t*dy - cy)^2 = r^2
+        a = dx*dx + dy*dy
+        b = 2 * (dx*(x1 - cx) + dy*(y1 - cy))
+        c = (x1 - cx)**2 + (y1 - cy)**2 - r*r
+        
+        disc = b*b - 4*a*c
+        if disc < -1e-9:
+            return f"Lỗi: Đường thẳng {p1_line}{p2_line} không cắt đường tròn."
+        if abs(disc) < 1e-9:
+            disc = 0  # tiếp tuyến
+        
+        sqrt_disc = np.sqrt(disc)
+        t1 = (-b + sqrt_disc) / (2*a)
+        t2 = (-b - sqrt_disc) / (2*a)
+        
+        if t1 > t2:
+            t1, t2 = t2, t1
+        
+        def point_at(t):
+            return (x1 + t*dx, y1 + t*dy)
+        
+        # Kiểm tra xem p1_line hoặc p2_line có nằm trên đường tròn không
+        # Nếu có, ưu tiên gán điểm kia cho result_2
+        on_circle = lambda x, y: abs((x-cx)**2 + (y-cy)**2 - r*r) < 1e-9
+        
+        pts = [point_at(t1), point_at(t2)]
+        
+        # Dedup (tiếp tuyến)
+        if abs(t1 - t2) < 1e-9:
+            pts = pts[:1]
+        
+        # Gán kết quả
+        n_assigned = 0
+        for t, pt in [(t1, pts[0]), (t2, pts[-1])]:
+            px, py = pt
+            matched_p1 = abs(px - x1) < 1e-9 and abs(py - y1) < 1e-9
+            matched_p2 = abs(px - x2) < 1e-9 and abs(py - y2) < 1e-9
+            
+            if matched_p1 and on_circle(x1, y1):
+                # p1_line đã nằm trên đường tròn, bỏ qua, lấy điểm kia
+                continue
+            if matched_p2 and on_circle(x2, y2):
+                continue
+            
+            name = result_1 if n_assigned == 0 else (result_2 if result_2 else None)
+            if name is None:
+                break
+            self.points[name] = (px, py)
+            n_assigned += 1
+        
+        # Tự động nối nét
+        if result_1 in self.points:
+            self.add_segment(p1_line, result_1, color='b', linestyle=':')
+        if result_2 and result_2 in self.points:
+            self.add_segment(p1_line, result_2, color='b', linestyle=':')
+        
+        if n_assigned == 0:
+            return f"Lỗi: Cả 2 điểm {p1_line},{p2_line} đều đã nằm trên đường tròn."
+        
+        msg = f"Đã tìm giao điểm của {p1_line}{p2_line} với đường tròn tâm {center}: {result_1}"
+        if result_2 and result_2 in self.points:
+            msg += f", {result_2}"
+        return msg
+
     def get_perpendicular_projection(self, point_name, p1_line, p2_line, result_name):
         """Hạ đường vuông góc từ một điểm xuống một đường thẳng (Tìm chân đường cao)."""
         x0, y0 = self.points[point_name]
@@ -228,7 +309,7 @@ class GeometryEngine:
             
         # 4. Vẽ các điểm (Nodes) và Gắn nhãn thông minh (Labels)
         # Gom nhóm các điểm chính để ưu tiên hiển thị màu nổi bật
-        main_vertices = ['A', 'B', 'C', 'D', 'O', 'M']
+        main_vertices = ['A', 'B', 'C', 'D', 'E', 'F', 'H', 'M', 'N', 'O']
         
         for name, (x, y) in self.points.items():
             # Điểm gốc/Đỉnh chính màu đỏ, các giao điểm hệ quả màu xanh nước biển
