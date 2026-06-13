@@ -1,83 +1,241 @@
 import matplotlib.pyplot as plt
-from sympy import Point, Line, Circle as SymCircle
+import numpy as np
+import random
 import os
 
 class GeometryEngine:
     def __init__(self):
-        self.points = {}  # Lưu trữ điểm: {"A": (x, y), "B": (x, y), ...}
+        self.points = {}      # {"A": (x, y), "B": (x, y), ...}
+        self.segments = []    # [("A", "B", "color", "linestyle"), ...]
+        self.circles = []     # [("O", radius, "color", "linestyle"), ...]
 
     def reset_session(self):
+        """Xóa toàn bộ dữ liệu để bắt đầu bài toán mới."""
         self.points.clear()
-        return "Đã xóa toàn bộ dữ liệu hình cũ."
+        self.segments.clear()
+        self.circles.clear()
+        if hasattr(self, 'r'): delattr(self, 'r')
+        return "Đã làm sạch hệ thống. Sẵn sàng cho bài toán mới."
 
+    # ==========================================
+    # NHÓM 1: KHỞI TẠO NỀN MÓNG (THỰC THỂ GỐC)
+    # ==========================================
+    
     def add_point(self, name, x, y):
+        """Thêm một điểm cụ thể khi biết tọa độ."""
         self.points[name] = (float(x), float(y))
-        return f"Đã thêm điểm {name}({x}, {y})"
+        return f"Đã thêm điểm {name}({x:g}, {y:g})"
+
+    def create_general_triangle(self, name_a="A", name_b="B", name_c="C"):
+        """Tạo một tam giác nhọn tổng quát ngẫu nhiên, tránh các trường hợp đặc biệt."""
+        c_x = random.uniform(7, 10)
+        a_x = random.uniform(c_x * 0.3, c_x * 0.7)
+        a_y = random.uniform(5, 8)
+        
+        self.points[name_b] = (0.0, 0.0)
+        self.points[name_c] = (c_x, 0.0)
+        self.points[name_a] = (a_x, a_y)
+        
+        self.add_segment(name_a, name_b, color='g', linestyle='-')
+        self.add_segment(name_b, name_c, color='g', linestyle='-')
+        self.add_segment(name_c, name_a, color='g', linestyle='-')
+        return f"Đã tạo tam giác tổng quát {name_a}{name_b}{name_c}."
+
+    def add_point_on_circle_arc(self, name, center_name, angle_deg):
+        """Lấy một điểm nằm trên đường tròn theo góc lượng giác (độ)."""
+        if center_name not in self.points:
+            return f"Lỗi: Không tìm thấy tâm {center_name}"
+        ox, oy = self.points[center_name]
+        alpha = np.radians(float(angle_deg))
+        x = ox + self.r * np.cos(alpha)
+        y = oy + self.r * np.sin(alpha)
+        self.points[name] = (x, y)
+        return f"Đã lấy điểm {name} trên đường tròn với góc {angle_deg}°."
+
+    # ĐỔI TÊN HÀM NÀY:
+    def create_circle_with_diameter(self, center_name="O", radius=5, point_diameter_1=None, point_diameter_2=None):
+        """Tạo đường tròn biết tâm và bán kính. Có thể tùy chọn tạo 2 đầu đường kính vuông góc."""
+        self.points[center_name] = (0.0, 0.0)
+        self.r = float(radius)
+        self.circles.append((center_name, self.r, 'b', '-'))
+        
+        if point_diameter_1 and point_diameter_2:
+            self.points[point_diameter_1] = (-self.r, 0.0)
+            self.points[point_diameter_2] = (self.r, 0.0)
+            self.add_segment(point_diameter_1, point_diameter_2, 'k', '-')
+            
+        return f"Đã tạo đường tròn tâm {center_name} bán kính R={radius} với đường kính trục."
+
+    # ==========================================
+    # NHÓM 2: CÁC PHÉP TOÁN ĐẠI SỐ HÌNH HỌC (TÍNH TOÁN)
+    # ==========================================
+
+    def add_segment(self, p1_name, p2_name, color='k', linestyle='-'):
+        """Nối đoạn thẳng giữa 2 điểm."""
+        if p1_name in self.points and p2_name in self.points:
+            self.segments.append((p1_name, p2_name, color, linestyle))
+            return f"Đã nối đoạn {p1_name}{p2_name}."
+        return f"Lỗi: Không tìm thấy điểm để nối."
 
     def get_midpoint(self, p1_name, p2_name, result_name):
-        if p1_name not in self.points or p2_name not in self.points:
-            return f"Lỗi: Không tìm thấy điểm {p1_name} hoặc {p2_name}"
+        """Tìm trung điểm của đoạn thẳng."""
         x1, y1 = self.points[p1_name]
         x2, y2 = self.points[p2_name]
-        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
-        self.points[result_name] = (mx, my)
-        return f"Đã tính trung điểm {result_name}({mx}, {my}) của {p1_name}{p2_name}"
+        self.points[result_name] = ((x1 + x2) / 2, (y1 + y2) / 2)
+        return f"Đã dựng trung điểm {result_name} của {p1_name}{p2_name}."
+
+    def get_line_line_intersection(self, p1_l1, p2_l1, p1_l2, p2_l2, result_name):
+        """Tìm giao điểm của 2 đường thẳng và tự động nối các nét vẽ hệ quả."""
+        x1, y1 = self.points[p1_l1]
+        x2, y2 = self.points[p2_l1]
+        x3, y3 = self.points[p1_l2]
+        x4, y4 = self.points[p2_l2]
+        
+        den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+        if abs(den) < 1e-6:
+            return f"Lỗi: Hai đường thẳng {p1_l1}{p2_l1} và {p1_l2}{p2_l2} song song hoặc trùng nhau."
+            
+        px = ((x1*y2 - y1*x2)*(x3 - x4) - (x1 - x2)*(x3*y4 - y3*x4)) / den
+        py = ((x1*y2 - y1*x2)*(y3 - y4) - (y1 - y2)*(x3*y4 - y3*x4)) / den
+        self.points[result_name] = (px, py)
+        
+        # TỰ ĐỘNG NỐI NÉT: Giúp hình vẽ không bị đứt đoạn nét vẽ phụ
+        self.add_segment(p1_l1, result_name, color='b', linestyle=':')
+        self.add_segment(p1_l2, result_name, color='b', linestyle=':')
+        return f"Đã tìm thấy giao điểm {result_name} tại ({px:.2f}, {py:.2f})."
 
     def get_perpendicular_projection(self, point_name, p1_line, p2_line, result_name):
-        if point_name not in self.points or p1_line not in self.points or p2_line not in self.points:
-            return "Lỗi: Thiếu dữ liệu điểm để tính hình chiếu vuông góc."
-        
-        # Trong bài toán cụ thể này, chân đường cao từ A xuống BC chính là B(0,0)
-        # Để tổng quát, ta lấy hình chiếu của điểm lên đường thẳng:
+        """Hạ đường vuông góc từ một điểm xuống một đường thẳng (Tìm chân đường cao)."""
         x0, y0 = self.points[point_name]
         x1, y1 = self.points[p1_line]
         x2, y2 = self.points[p2_line]
         
-        if x1 == x2 and y1 == y2:
-            return "Lỗi: Hai điểm tạo đường thẳng trùng nhau."
-            
-        # Vectơ pháp tuyến đường thẳng
         dx, dy = x2 - x1, y2 - y1
         mag2 = dx*dx + dy*dy
+        if mag2 < 1e-6: return "Lỗi: Đường thẳng không hợp lệ."
+        
         u = ((x0 - x1) * dx + (y0 - y1) * dy) / mag2
         hx = x1 + u * dx
         hy = y1 + u * dy
-        
         self.points[result_name] = (hx, hy)
-        return f"Đã tìm được chân đường vuông góc {result_name}({hx}, {hy})"
+        self.add_segment(point_name, result_name, color='r', linestyle='--')
+        return f"Đã hạ đường vuông góc từ {point_name} xuống {p1_line}{p2_line} tại {result_name}."
 
-    def draw_geometry_and_save(self):
-        if not self.points:
-            return "Không có dữ liệu để vẽ."
-            
-        plt.figure(figsize=(6, 6))
+    def get_parallel_line_point(self, point_name, p1_ref, p2_ref, distance, result_name):
+        """Tạo một điểm tạo với point_name thành đường thẳng song song với p1_ref-p2_ref."""
+        x0, y0 = self.points[point_name]
+        x1, y1 = self.points[p1_ref]
+        x2, y2 = self.points[p2_ref]
         
-        # Lấy tọa độ các điểm để cấu hình trục
+        dx, dy = x2 - x1, y2 - y1
+        length = np.hypot(dx, dy)
+        # Tạo điểm mới tịnh tiến theo vecto chỉ phương của đường thẳng tham chiếu
+        nx = x0 + (dx / length) * distance
+        ny = y0 + (dy / length) * distance
+        self.points[result_name] = (nx, ny)
+        self.add_segment(point_name, result_name, color='m', linestyle=':')
+        return f"Đã dựng đường thẳng qua {point_name} song song với {p1_ref}{p2_ref}."
+
+    # ==========================================
+    # NHÓM 3: KẾT XUẤT ĐỒ HỌA (RENDER)
+    # ==========================================
+    def draw_geometry_and_save(self, filename="geometry_output.png"):
+        if not self.points: 
+            return "Không có dữ liệu vẽ hình."
+        
+        # Thiết lập cấu hình đồ họa độ phân giải cao
+        fig, ax = plt.subplots(figsize=(8, 8), dpi=300)
+        
+        # 1. Lấy bán kính hiện tại để tính toán tỉ lệ hiển thị nhãn (Label)
+        current_r = getattr(self, 'r', 5.0)
+        offset = current_r * 0.04  # Khoảng cách chữ động tránh đè lên điểm chấm
+        
+        # 2. Vẽ tất cả các đường tròn có trong bộ nhớ
+        for center_name, radius, color, style in self.circles:
+            cx, cy = self.points[center_name]
+            circle_art = plt.Circle((cx, cy), radius, color=color, fill=False, linestyle=style, linewidth=1.8)
+            ax.add_patch(circle_art)
+            
+        # 3. Vẽ tất cả các đoạn thẳng đã đăng ký
+        for p1_name, p2_name, color, style in self.segments:
+            if p1_name in self.points and p2_name in self.points:
+                x1, y1 = self.points[p1_name]
+                x2, y2 = self.points[p2_name]
+                ax.plot([x1, x2], [y1, y2], color=color, linestyle=style, linewidth=1.5)
+            
+        # 4. Vẽ các điểm (Nodes) và Gắn nhãn thông minh (Labels)
+        # Gom nhóm các điểm chính để ưu tiên hiển thị màu nổi bật
+        main_vertices = ['A', 'B', 'C', 'D', 'O', 'M']
+        
+        for name, (x, y) in self.points.items():
+            # Điểm gốc/Đỉnh chính màu đỏ, các giao điểm hệ quả màu xanh nước biển
+            point_color = 'ro' if name in main_vertices else 'bo'
+            ax.plot(x, y, point_color, markersize=6, zorder=5)
+            
+            # Tự động căn vị trí nhãn dựa trên vị trí điểm để tránh đè nét vẽ (Kỹ thuật tránh đè chữ)
+            text_x, text_y = x + offset, y + offset
+            if x < 0: text_x = x - offset * 2.5  # Nếu nằm bên trái trục Oy, đẩy chữ sang trái
+            if y < 0: text_y = y - offset * 2.0  # Nếu nằm dưới trục Ox, đẩy chữ xuống dưới
+                
+            ax.text(text_x, text_y, name, fontsize=13, fontweight='bold', 
+                    color='darkred' if name in main_vertices else 'darkblue',
+                    zorder=6)
+            
+        # 5. Cấu hình giới hạn khung trục (Viewport) tự động co giãn theo thực thể xa nhất
         xs = [p[0] for p in self.points.values()]
         ys = [p[1] for p in self.points.values()]
+        all_coords = xs + ys + [current_r, -current_r]
         
-        # Vẽ các điểm và nhãn (Label)
-        for name, (x, y) in self.points.items():
-            plt.plot(x, y, 'ro' if name in ['A','B','C'] else 'bo') # Đỉnh màu đỏ, điểm phụ màu xanh
-            plt.text(x + 0.2, y + 0.2, f"{name}({x:g}, {y:g})", fontsize=12, fontweight='bold')
+        max_val = max(abs(coord) for coord in all_coords)
+        limit_val = max_val * 1.25  # Chừa 25% rìa ngoài để không bị mất chữ Label
         
-        # Tự động nối các đỉnh của tam giác nếu có đủ ABC
-        if all(k in self.points for k in ['A', 'B', 'C']):
-            A, B, C = self.points['A'], self.points['B'], self.points['C']
-            plt.plot([A[0], B[0], C[0], A[0]], [A[1], B[1], C[1], A[1]], 'g-', linewidth=2)
-            
-        # Nối thêm đoạn AM nếu có điểm M
-        if 'A' in self.points and 'M' in self.points:
-            plt.plot([self.points['A'][0], self.points['M'][0]], [self.points['A'][1], self.points['M'][1]], 'k--')
-
-        plt.xlim(min(xs) - 1, max(xs) + 2)
-        plt.ylim(min(ys) - 1, max(ys) + 2)
-        plt.axhline(0, color='black',linewidth=0.5)
-        plt.axvline(0, color='black',linewidth=0.5)
-        plt.grid(True, linestyle=':')
-        plt.title("Hình vẽ hình học tự động sinh bởi AI Agent")
+        ax.set_xlim(-limit_val, limit_val)
+        ax.set_ylim(-limit_val, limit_val)
         
-        filename = "geometry_plot.png"
-        plt.savefig(filename, dpi=300)
+        # Giữ tỉ lệ 1:1 tuyệt đối để đường tròn luôn tròn, không bao giờ bị méo elip
+        ax.set_aspect('equal', adjustable='box')
+        
+        # Ẩn các vạch số thô kệch của hệ trục tọa độ giải tích để giống hình vẽ Sách giáo khoa
+        ax.axis('off') 
+        
+        # Tự động tối ưu bố cục không gian vẽ trước khi lưu file
+        plt.tight_layout()
+        
+        # Lưu hình ảnh chất lượng cao
+        plt.savefig(filename, dpi=300, bbox_inches='tight', pad_inches=0.1)
         plt.close()
-        return f"Đã lưu hình ảnh thành công vào file: {os.path.abspath(filename)}"
+        
+        return f"Thành công! Hình vẽ hình học trực quan đã được xuất ra file: {os.path.abspath(filename)}"
+    
+    def get_perpendicular_line_intersection(self, point_pass, p1_perp, p2_perp, p1_line2, p2_line2, result_name):
+        """Kẻ đường thẳng qua point_pass vuông góc với p1_perp-p2_perp và cắt p1_line2-p2_line2 tại result_name."""
+        if any(p not in self.points for p in [point_pass, p1_perp, p2_perp, p1_line2, p2_line2]):
+            return "Lỗi: Thiếu dữ liệu điểm để tính toán."
+            
+        x0, y0 = self.points[point_pass]
+        x1, y1 = self.points[p1_perp]
+        x2, y2 = self.points[p2_perp]
+        
+        dx, dy = x2 - x1, y2 - y1
+        if np.hypot(dx, dy) < 1e-6: return "Lỗi: Đoạn vuông góc không hợp lệ."
+        
+        A1, B1 = dx, dy
+        C1 = dx * x0 + dy * y0
+        
+        xa, ya = self.points[p1_line2]
+        xb, yb = self.points[p2_line2]
+        
+        A2 = yb - ya
+        B2 = xa - xb
+        C2 = A2 * xa + B2 * ya
+        
+        den = A1 * B2 - B1 * A2
+        if abs(den) < 1e-6:
+            return "Lỗi: Không tìm thấy giao điểm (Đường thẳng song song)."
+            
+        ex = (C1 * B2 - B1 * C2) / den
+        ey = (A1 * C2 - C1 * A2) / den
+        
+        self.points[result_name] = (ex, ey)
+        self.add_segment(point_pass, result_name, color='m', linestyle='-')
+        return f"Đã dựng đường vuông góc qua {point_pass} cắt {p1_line2}{p2_line2} tại {result_name}."
