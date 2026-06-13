@@ -45,16 +45,24 @@ class GeometryEngine:
         """Lấy một điểm nằm trên đường tròn theo góc lượng giác (độ)."""
         if center_name not in self.points:
             return f"Lỗi: Không tìm thấy tâm {center_name}"
+        r = getattr(self, 'r', None)
+        if r is None:
+            return "Lỗi: Chưa khởi tạo bán kính đường tròn. Hãy gọi create_circle_with_diameter trước."
         ox, oy = self.points[center_name]
         alpha = np.radians(float(angle_deg))
-        x = ox + self.r * np.cos(alpha)
-        y = oy + self.r * np.sin(alpha)
+        x = ox + r * np.cos(alpha)
+        y = oy + r * np.sin(alpha)
         self.points[name] = (x, y)
         return f"Đã lấy điểm {name} trên đường tròn với góc {angle_deg}°."
 
     # ĐỔI TÊN HÀM NÀY:
-    def create_circle_with_diameter(self, center_name="O", radius=5, point_diameter_1=None, point_diameter_2=None):
-        """Tạo đường tròn biết tâm và bán kính. Có thể tùy chọn tạo 2 đầu đường kính vuông góc."""
+    def create_circle_with_diameter(self, center_name="O", radius=5,
+                                     point_diameter_1=None, point_diameter_2=None,
+                                     point_diameter_3=None, point_diameter_4=None):
+        """Tạo đường tròn tâm O bán kính R. Tùy chọn tạo 1 hoặc 2 đường kính vuông góc.
+        - p1-p2: đường kính thứ nhất (nằm ngang)
+        - p3-p4: đường kính thứ hai vuông góc (nằm dọc)
+        """
         self.points[center_name] = (0.0, 0.0)
         self.r = float(radius)
         self.circles.append((center_name, self.r, 'b', '-'))
@@ -64,7 +72,12 @@ class GeometryEngine:
             self.points[point_diameter_2] = (self.r, 0.0)
             self.add_segment(point_diameter_1, point_diameter_2, 'k', '-')
             
-        return f"Đã tạo đường tròn tâm {center_name} bán kính R={radius} với đường kính trục."
+        if point_diameter_3 and point_diameter_4:
+            self.points[point_diameter_3] = (0.0, self.r)
+            self.points[point_diameter_4] = (0.0, -self.r)
+            self.add_segment(point_diameter_3, point_diameter_4, 'k', '-')
+            
+        return f"Đã tạo đường tròn tâm {center_name} bán kính R={radius}."
 
     # ==========================================
     # NHÓM 2: CÁC PHÉP TOÁN ĐẠI SỐ HÌNH HỌC (TÍNH TOÁN)
@@ -99,9 +112,9 @@ class GeometryEngine:
         py = ((x1*y2 - y1*x2)*(y3 - y4) - (y1 - y2)*(x3*y4 - y3*x4)) / den
         self.points[result_name] = (px, py)
         
-        # TỰ ĐỘNG NỐI NÉT: Giúp hình vẽ không bị đứt đoạn nét vẽ phụ
-        self.add_segment(p1_l1, result_name, color='b', linestyle=':')
-        self.add_segment(p1_l2, result_name, color='b', linestyle=':')
+        # TỰ ĐỘNG NỐI TOÀN BỘ 2 ĐƯỜNG THẲNG (nét đứt) để user thấy rõ
+        self.add_segment(p1_l1, p2_l1, color='b', linestyle=':')
+        self.add_segment(p1_l2, p2_l2, color='b', linestyle=':')
         return f"Đã tìm thấy giao điểm {result_name} tại ({px:.2f}, {py:.2f})."
 
     def get_perpendicular_projection(self, point_name, p1_line, p2_line, result_name):
@@ -137,9 +150,51 @@ class GeometryEngine:
         return f"Đã dựng đường thẳng qua {point_name} song song với {p1_ref}{p2_ref}."
 
     # ==========================================
-    # NHÓM 3: KẾT XUẤT ĐỒ HỌA (RENDER)
+    # NHÓM 3: CÔNG CỤ PHỤ TRỢ & KIỂM TRA
+    # ==========================================
+
+    def final_answer(self, answer):
+        """Kết thúc bài toán, output lời giải text (chứng minh, tính toán, kết luận)."""
+        return f"LỜI GIẢI:\n{answer}"
+
+    def get_distance(self, p1_name, p2_name):
+        """Tính khoảng cách Euclid giữa 2 điểm."""
+        x1, y1 = self.points[p1_name]
+        x2, y2 = self.points[p2_name]
+        d = np.hypot(x2 - x1, y2 - y1)
+        return f"Khoảng cách {p1_name}{p2_name} = {d:.4f}"
+
+    def check_collinear(self, p1_name, p2_name, p3_name):
+        """Kiểm tra 3 điểm có thẳng hàng không (diện tích tam giác ≈ 0)."""
+        x1, y1 = self.points[p1_name]
+        x2, y2 = self.points[p2_name]
+        x3, y3 = self.points[p3_name]
+        area = abs(x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2)) / 2
+        if area < 1e-9:
+            return f"{p1_name}, {p2_name}, {p3_name} thẳng hàng."
+        return f"{p1_name}, {p2_name}, {p3_name} KHÔNG thẳng hàng (diện tích={area:.6f})."
+
+    def reflect_point_over_line(self, point_name, p1_line, p2_line, result_name):
+        """Tìm điểm đối xứng của một điểm qua một đường thẳng."""
+        x0, y0 = self.points[point_name]
+        x1, y1 = self.points[p1_line]
+        x2, y2 = self.points[p2_line]
+        dx, dy = x2 - x1, y2 - y1
+        mag2 = dx*dx + dy*dy
+        if mag2 < 1e-6:
+            return "Lỗi: Đường thẳng không hợp lệ."
+        u = ((x0 - x1) * dx + (y0 - y1) * dy) / mag2
+        hx = x1 + u * dx
+        hy = y1 + u * dy
+        self.points[result_name] = (2*hx - x0, 2*hy - y0)
+        self.add_segment(point_name, result_name, color='c', linestyle=':')
+        return f"Đã dựng điểm {result_name} đối xứng với {point_name} qua {p1_line}{p2_line}."
+
+    # ==========================================
+    # NHÓM 4: KẾT XUẤT ĐỒ HỌA (RENDER)
     # ==========================================
     def draw_geometry_and_save(self, filename="geometry_output.png"):
+        """Kết xuất toàn bộ hình vẽ (điểm, đoạn thẳng, đường tròn) thành file ảnh PNG."""
         if not self.points: 
             return "Không có dữ liệu vẽ hình."
         
@@ -156,8 +211,16 @@ class GeometryEngine:
             circle_art = plt.Circle((cx, cy), radius, color=color, fill=False, linestyle=style, linewidth=1.8)
             ax.add_patch(circle_art)
             
-        # 3. Vẽ tất cả các đoạn thẳng đã đăng ký
-        for p1_name, p2_name, color, style in self.segments:
+        # 3. Vẽ tất cả các đoạn thẳng đã đăng ký (loại bỏ trùng lặp)
+        seen_pairs = set()
+        unique_segments = []
+        for seg in self.segments:
+            p1, p2 = seg[0], seg[1]
+            key = tuple(sorted((p1, p2)))
+            if key not in seen_pairs:
+                seen_pairs.add(key)
+                unique_segments.append(seg)
+        for p1_name, p2_name, color, style in unique_segments:
             if p1_name in self.points and p2_name in self.points:
                 x1, y1 = self.points[p1_name]
                 x2, y2 = self.points[p2_name]
@@ -238,4 +301,5 @@ class GeometryEngine:
         
         self.points[result_name] = (ex, ey)
         self.add_segment(point_pass, result_name, color='m', linestyle='-')
+        self.add_segment(p1_line2, p2_line2, color='b', linestyle=':')
         return f"Đã dựng đường vuông góc qua {point_pass} cắt {p1_line2}{p2_line2} tại {result_name}."
