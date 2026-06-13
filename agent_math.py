@@ -1,9 +1,7 @@
-import asyncio
 import os
 import re
 import json
 import inspect
-from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 import requests
