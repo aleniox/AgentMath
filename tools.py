@@ -79,9 +79,11 @@ class GeometryEngine:
             self.points[horizontal_p2] = (self.r, 0.0)
             self.add_segment(horizontal_p1, horizontal_p2, 'k', '-')
             
-        if vertical_p1 and vertical_p2:
+        if vertical_p1:
             self.points[vertical_p1] = (0.0, self.r)
+        if vertical_p2:
             self.points[vertical_p2] = (0.0, -self.r)
+        if vertical_p1 and vertical_p2:
             self.add_segment(vertical_p1, vertical_p2, 'k', '-')
             
         return f"Đã tạo đường tròn tâm {center_name} bán kính R={radius}."
@@ -480,6 +482,24 @@ class GeometryEngine:
             msg += f" (tọa độ trùng với {existing}, dùng lại)"
         msg += f" và bán kính R={r_val:.4f}."
         return msg
+
+    def get_perpendicular_line_point(self, point_name, p1_ref, p2_ref, result_name, distance=2.0):
+        """Tạo điểm mới result_name nằm trên đường thẳng vuông góc với p1_ref-p2_ref và đi qua point_name.
+        Dùng add_segment(point_name, result_name) sau đó để vẽ đường vuông góc."""
+        if any(p not in self.points for p in [point_name, p1_ref, p2_ref]):
+            return "Lỗi: Thiếu dữ liệu điểm."
+        x0, y0 = self.points[point_name]
+        x1, y1 = self.points[p1_ref]
+        x2, y2 = self.points[p2_ref]
+        dx, dy = x2 - x1, y2 - y1
+        mag = np.hypot(dx, dy)
+        if mag < 1e-6:
+            return "Lỗi: Đoạn tham chiếu không hợp lệ."
+        # Vectơ pháp tuyến (vuông góc)
+        nx, ny = -dy / mag, dx / mag
+        self.points[result_name] = (x0 + nx * distance, y0 + ny * distance)
+        self.add_segment(point_name, result_name, color='m', linestyle='-')
+        return f"Đã tạo điểm {result_name} trên đường vuông góc với {p1_ref}{p2_ref} qua {point_name}."
 
     # ==========================================
     # NHÓM 3: CÔNG CỤ PHỤ TRỢ & KIỂM TRA
